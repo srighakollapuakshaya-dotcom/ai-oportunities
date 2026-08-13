@@ -4,3 +4,4 @@ feedparser
 pypdf
 python-docx
 reportlab
+scikit-learn
