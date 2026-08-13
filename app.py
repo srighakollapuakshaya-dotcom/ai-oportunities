@@ -282,7 +282,7 @@ def login_page():
                     st.session_state.page = "dashboard"
 
                     st.switch_page(
-                        "dashboard.py"
+                        "dashboard"
                     )
 
                 else:
@@ -411,7 +411,7 @@ def google_accounts():
         st.session_state.page = "dashboard"
 
         st.switch_page(
-            "dashboard.py"
+            "dashboard"
         )
 
 
@@ -449,7 +449,7 @@ def google_accounts():
         st.session_state.page = "dashboard"
 
         st.switch_page(
-            "dashboard.py"
+            "dashboard"
         )
 
 
@@ -607,7 +607,7 @@ def signup_page():
 if st.session_state.logged_in:
 
     st.switch_page(
-        "dashboard.py"
+        "dashboard"
     )
 
 
