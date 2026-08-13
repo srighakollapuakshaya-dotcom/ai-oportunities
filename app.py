@@ -1,12 +1,8 @@
 import streamlit as st
-
-from auth import (
-    create_database,
-    register_user,
-    login_user,
-    logout_user,
-    is_logged_in
-)
+import sqlite3
+import hashlib
+import re
+import os
 
 
 # =========================================================
@@ -16,7 +12,7 @@ from auth import (
 st.set_page_config(
     page_title="Student Opportunity Hub",
     page_icon="🎓",
-    layout="wide"
+    layout="centered"
 )
 
 
@@ -24,433 +20,607 @@ st.set_page_config(
 # DATABASE
 # =========================================================
 
-create_database()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DB_PATH = os.path.join(
+    BASE_DIR,
+    "users.db"
+)
+
+conn = sqlite3.connect(
+    DB_PATH,
+    timeout=10
+)
+
+cursor = conn.cursor()
+
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL
+)
+""")
+
+conn.commit()
 
 
 # =========================================================
-# LOGIN / REGISTER PAGE
+# PASSWORD HASH
 # =========================================================
 
-if not is_logged_in():
+def hash_password(password):
 
+    return hashlib.sha256(
+        password.encode()
+    ).hexdigest()
+
+
+# =========================================================
+# EMAIL VALIDATION
+# =========================================================
+
+def valid_email(email):
+
+    pattern = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+    return re.match(
+        pattern,
+        email
+    )
+
+
+# =========================================================
+# SESSION STATE
+# =========================================================
+
+if "page" not in st.session_state:
+
+    st.session_state.page = "login"
+
+
+if "logged_in" not in st.session_state:
+
+    st.session_state.logged_in = False
+
+
+if "google_page" not in st.session_state:
+
+    st.session_state.google_page = False
+
+
+# =========================================================
+# CSS
+# =========================================================
+
+st.markdown(
+    """
+    <style>
+
+    #MainMenu {
+        visibility: hidden;
+    }
+
+    footer {
+        visibility: hidden;
+    }
+
+    header {
+        visibility: hidden;
+    }
+
+    .block-container {
+        max-width: 430px;
+        padding-top: 35px;
+    }
+
+    .logo {
+        text-align: center;
+        margin-bottom: 25px;
+    }
+
+    h1 {
+        text-align: center;
+        font-size: 25px !important;
+    }
+
+    .stTextInput input {
+        height: 42px;
+        border-radius: 6px;
+    }
+
+    .stButton button {
+        width: 100%;
+        height: 42px;
+        border-radius: 6px;
+    }
+
+    .account-card {
+        border: 1px solid #dadce0;
+        border-radius: 10px;
+        padding: 14px;
+        margin: 10px 0;
+    }
+
+    .account-name {
+        font-size: 15px;
+        font-weight: 500;
+    }
+
+    .account-email {
+        font-size: 13px;
+        color: #666;
+    }
+
+    .google-title {
+        text-align: center;
+        font-size: 24px;
+        margin-top: 10px;
+    }
+
+    .google-subtitle {
+        text-align: center;
+        color: #555;
+        margin-bottom: 25px;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# =========================================================
+# LOGO
+# =========================================================
+
+
+
+
+
+def show_logo(icon="🎓"):
     st.markdown(
-        """
-        <style>
-
-        .main-title {
-            text-align: center;
-            font-size: 40px;
-            font-weight: bold;
-        }
-
-        .sub-title {
-            text-align: center;
-            font-size: 18px;
-            color: gray;
-        }
-
-        </style>
+        f"""
+        <div style="
+            width:55px;
+            height:55px;
+            border-radius:50%;
+            border:3px solid #4285f4;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            margin:auto;
+            font-size:28px;
+        ">
+            {icon}
+        </div>
         """,
         unsafe_allow_html=True
     )
 
-    st.markdown(
-        '<div class="main-title">'
-        '🎓 Student Opportunity Hub'
-        '</div>',
-        unsafe_allow_html=True
-    )
 
-    st.markdown(
-        '<div class="sub-title">'
-        'Scholarships • Internships • Resume • Jobs'
-        '</div>',
-        unsafe_allow_html=True
-    )
 
-    st.write("")
 
-    # =====================================================
-    # TABS
-    # =====================================================
+# =========================================================
+# LOGIN
+# =========================================================
 
-    login_tab, register_tab = st.tabs(
-        [
-            "🔐 Login",
-            "📝 Create Account"
-        ]
+def login_page():
+
+    show_logo()
+
+    st.title(
+        "Log in to your account"
     )
 
 
-    # =====================================================
-    # LOGIN
-    # =====================================================
+    email = st.text_input(
+        "Email",
+        key="login_email"
+    )
 
-    with login_tab:
 
-        st.subheader(
-            "🔐 Login"
-        )
+    password = st.text_input(
+        "Password",
+        type="password",
+        key="login_password"
+    )
 
-        username = st.text_input(
-            "Username",
-            key="login_username"
-        )
 
-        password = st.text_input(
-            "Password",
-            type="password",
-            key="login_password"
-        )
+    st.checkbox(
+        "Remember me",
+        key="remember_me"
+    )
 
-        if st.button(
-            "Login",
-            use_container_width=True
-        ):
 
-            if username == "" or password == "":
+    # -----------------------------------------------------
+    # SIGN IN
+    # -----------------------------------------------------
+
+    if st.button(
+        "Sign in",
+        key="sign_in"
+    ):
+
+        if email == "" or password == "":
+
+            st.warning(
+                "Please enter email and password."
+            )
+
+        else:
+
+            cursor.execute(
+                """
+                SELECT * FROM users
+                WHERE email = ?
+                """,
+                (email,)
+            )
+
+            user = cursor.fetchone()
+
+
+            if user is None:
 
                 st.error(
-                    "Please enter username and password."
+                    "Account not created. First Signup cheyyi."
                 )
 
             else:
 
-                success = login_user(
-                    username,
+                entered_password = hash_password(
                     password
                 )
 
-                if success:
 
-                    st.success(
-                        "Login successful! 🎉"
+                if user[2] == entered_password:
+
+                    st.session_state.logged_in = True
+
+                    st.session_state.page = "dashboard"
+
+                    st.switch_page(
+                        "pages/dashboard.py"
                     )
-
-                    st.rerun()
 
                 else:
 
                     st.error(
-                        "❌ Invalid username or password."
+                        "Incorrect password."
                     )
 
 
-    # =====================================================
-    # REGISTER
-    # =====================================================
+    # -----------------------------------------------------
+    # OR
+    # -----------------------------------------------------
 
-    with register_tab:
+    st.markdown(
+        """
+        <div style="
+            text-align:center;
+            margin:18px 0;
+            color:#999;
+        ">
+            or
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-        st.subheader(
-            "📝 Create New Account"
+
+    # -----------------------------------------------------
+    # GOOGLE
+    # -----------------------------------------------------
+
+    if st.button(
+        "🌈 Continue with Google",
+        key="google_login"
+    ):
+
+        st.session_state.google_page = True
+
+        st.rerun()
+
+
+    st.markdown(
+        """
+        <p style="text-align:center;">
+            Don't have an account?
+        </p>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+    # -----------------------------------------------------
+    # SIGN UP
+    # -----------------------------------------------------
+
+    if st.button(
+        "Sign up",
+        key="go_signup"
+    ):
+
+        st.session_state.page = "signup"
+
+        st.rerun()
+
+
+# =========================================================
+# GOOGLE ACCOUNTS
+# =========================================================
+
+def google_accounts():
+
+    show_logo()
+
+
+    st.markdown(
+        """
+        <div class="google-title">
+            Choose an account
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+    st.markdown(
+        """
+        <div class="google-subtitle">
+            to continue to your application
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+    # -----------------------------------------------------
+    # ACCOUNT 1
+    # -----------------------------------------------------
+
+    st.markdown(
+        """
+        <div class="account-card">
+
+            <div class="account-name">
+                👤 Alekhya
+            </div>
+
+            <div class="account-email">
+                alekhya@gmail.com
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+    if st.button(
+        "Continue as Alekhya",
+        key="google_alekhya"
+    ):
+
+        st.session_state.logged_in = True
+
+        st.session_state.google_page = False
+
+        st.session_state.page = "dashboard"
+
+        st.switch_page(
+            "pages/dashboard.py"
         )
 
-        new_username = st.text_input(
-            "Create Username",
-            key="register_username"
+
+    # -----------------------------------------------------
+    # ACCOUNT 2
+    # -----------------------------------------------------
+
+    st.markdown(
+        """
+        <div class="account-card">
+
+            <div class="account-name">
+                👤 User
+            </div>
+
+            <div class="account-email">
+                user@gmail.com
+            </div>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+    if st.button(
+        "Continue as User",
+        key="google_user"
+    ):
+
+        st.session_state.logged_in = True
+
+        st.session_state.google_page = False
+
+        st.session_state.page = "dashboard"
+
+        st.switch_page(
+            "pages/dashboard.py"
         )
 
-        new_password = st.text_input(
-            "Create Password",
-            type="password",
-            key="register_password"
-        )
 
-        confirm_password = st.text_input(
-            "Confirm Password",
-            type="password",
-            key="confirm_password"
-        )
+    st.divider()
 
-        if st.button(
-            "Create Account",
-            use_container_width=True
+
+    if st.button(
+        "➕ Use another account",
+        key="another_account"
+    ):
+
+        st.session_state.page = "signup"
+
+        st.session_state.google_page = False
+
+        st.rerun()
+
+
+    if st.button(
+        "← Back to Login",
+        key="back_login"
+    ):
+
+        st.session_state.google_page = False
+
+        st.rerun()
+
+
+# =========================================================
+# SIGNUP
+# =========================================================
+
+def signup_page():
+
+    show_logo()
+
+    st.title(
+        "Create your account"
+    )
+
+
+    email = st.text_input(
+        "Email",
+        key="signup_email"
+    )
+
+
+    password = st.text_input(
+        "Password",
+        type="password",
+        key="signup_password"
+    )
+
+
+    confirm_password = st.text_input(
+        "Confirm Password",
+        type="password",
+        key="confirm_password"
+    )
+
+
+    if st.button(
+        "Create Account",
+        key="create_account"
+    ):
+
+        if (
+            email == ""
+            or password == ""
+            or confirm_password == ""
         ):
 
-            if new_username == "":
-                st.error(
-                    "Please enter a username."
+            st.warning(
+                "Please fill all fields."
+            )
+
+
+        elif not valid_email(email):
+
+            st.error(
+                "Please enter a valid email."
+            )
+
+
+        elif len(password) < 6:
+
+            st.error(
+                "Password must contain at least 6 characters."
+            )
+
+
+        elif password != confirm_password:
+
+            st.error(
+                "Passwords do not match."
+            )
+
+
+        else:
+
+            try:
+
+                hashed_password = hash_password(
+                    password
                 )
 
-            elif new_password == "":
-                st.error(
-                    "Please enter a password."
-                )
 
-            elif new_password != confirm_password:
-
-                st.error(
-                    "Passwords do not match."
-                )
-
-            else:
-
-                success, message = register_user(
-                    new_username,
-                    new_password
-                )
-
-                if success:
-
-                    st.success(
-                        "✅ Account created successfully!"
+                cursor.execute(
+                    """
+                    INSERT INTO users
+                    (email, password)
+                    VALUES (?, ?)
+                    """,
+                    (
+                        email,
+                        hashed_password
                     )
-
-                    st.info(
-                        "Now go to the Login tab and login."
-                    )
-
-                else:
-
-                    st.error(
-                        message
-                    )
-
-    st.stop()
+                )
 
 
-# =========================================================
-# LOGGED-IN USER
-# =========================================================
-
-username = st.session_state.get(
-    "username",
-    "Student"
-)
+                conn.commit()
 
 
-# =========================================================
-# SIDEBAR
-# =========================================================
-
-st.sidebar.title(
-    "🎓 Opportunity Hub"
-)
-
-st.sidebar.success(
-    f"👤 {username}"
-)
-
-st.sidebar.divider()
+                st.success(
+                    "Account successfully created! 🎉"
+                )
 
 
-# =========================================================
-# NAVIGATION
-# =========================================================
+                st.session_state.page = "login"
 
-st.sidebar.page_link(
-    "app.py",
-    label="🏠 Home"
-)
-
-st.sidebar.page_link(
-    "pages/Scholarships.py",
-    label="🎓 Scholarships"
-)
-
-st.sidebar.page_link(
-    "pages/Internships.py",
-    label="💼 Internships"
-)
-
-st.sidebar.page_link(
-    "pages/Resume.py",
-    label="📄 Create Resume"
-)
-
-st.sidebar.page_link(
-    "pages/Recommendations.py",
-    label="🤖 Job Recommendations"
-)
+                st.rerun()
 
 
-st.sidebar.divider()
+            except sqlite3.IntegrityError:
 
+                st.error(
+                    "This account already exists."
+                )
 
-# =========================================================
-# LOGOUT
-# =========================================================
-
-if st.sidebar.button(
-    "🚪 Logout",
-    use_container_width=True
-):
-
-    logout_user()
-
-    st.rerun()
-
-
-# =========================================================
-# HOME PAGE
-# =========================================================
-
-st.title(
-    f"Welcome, {username}! 👋"
-)
-
-st.header(
-    "🎓 Student Opportunity Hub"
-)
-
-st.write(
-    "Your single platform for discovering "
-    "scholarships, internships and jobs."
-)
-
-st.divider()
-
-
-# =========================================================
-# SCHOLARSHIPS
-# =========================================================
-
-col1, col2 = st.columns(2)
-
-
-with col1:
-
-    st.subheader(
-        "🎓 Scholarships"
-    )
-
-    st.write(
-        "Find latest scholarship updates "
-        "and application opportunities."
-    )
 
     if st.button(
-        "🔎 Find Scholarships",
-        use_container_width=True,
-        key="scholarship_home"
+        "Back to Login",
+        key="back_to_login"
     ):
 
-        st.switch_page(
-            "pages/Scholarships.py"
-        )
+        st.session_state.page = "login"
+
+        st.rerun()
 
 
 # =========================================================
-# INTERNSHIPS
+# MAIN
 # =========================================================
 
-with col2:
+if st.session_state.logged_in:
 
-    st.subheader(
-        "💼 Internships"
-    )
-
-    st.write(
-        "Find internship opportunities "
-        "across India."
-    )
-
-    if st.button(
-        "🔎 Find Internships",
-        use_container_width=True,
-        key="internship_home"
-    ):
-
-        st.switch_page(
-            "pages/Internships.py"
-        )
-
-
-# =========================================================
-# RESUME
-# =========================================================
-
-col3, col4 = st.columns(2)
-
-
-with col3:
-
-    st.subheader(
-        "📄 Resume Builder"
-    )
-
-    st.write(
-        "Create your professional resume."
-    )
-
-    if st.button(
-        "📄 Create Resume",
-        use_container_width=True,
-        key="resume_home"
-    ):
-
-        st.switch_page(
-            "pages/Resume.py"
-        )
-
-
-# =========================================================
-# JOB RECOMMENDATION
-# =========================================================
-
-with col4:
-
-    st.subheader(
-        "🤖 Job Recommendations"
-    )
-
-    st.write(
-        "Upload your resume and find "
-        "suitable job opportunities."
-    )
-
-    if st.button(
-        "🤖 Find Recommended Jobs",
-        use_container_width=True,
-        key="jobs_home"
-    ):
-
-        st.switch_page(
-            "pages/Recommendations.py"
-        )
-
-
-# =========================================================
-# FEATURES
-# =========================================================
-
-st.divider()
-
-st.header(
-    "✨ Platform Features"
-)
-
-f1, f2, f3, f4 = st.columns(4)
-
-
-with f1:
-
-    st.info(
-        "🎓 **Scholarships**\n\n"
-        "Latest scholarship updates."
+    st.switch_page(
+        "pages/dashboard.py"
     )
 
 
-with f2:
+elif st.session_state.google_page:
 
-    st.info(
-        "💼 **Internships**\n\n"
-        "Find internship opportunities."
-    )
+    google_accounts()
 
 
-with f3:
+elif st.session_state.page == "login":
 
-    st.info(
-        "📄 **Resume Builder**\n\n"
-        "Create your resume."
-    )
+    login_page()
 
 
-with f4:
+elif st.session_state.page == "signup":
 
-    st.info(
-        "🤖 **Job Recommendations**\n\n"
-        "Get suitable jobs."
-    )
+    signup_page()
