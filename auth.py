@@ -4,7 +4,12 @@ import hashlib
 import os
 
 
-DB_NAME = "users.db"
+# =========================================================
+# DATABASE PATH
+# =========================================================
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "users.db")
 
 
 # =========================================================
@@ -13,16 +18,15 @@ DB_NAME = "users.db"
 
 def create_database():
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_PATH)
 
     cursor = conn.cursor()
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            salt TEXT NOT NULL
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
         )
     """)
 
@@ -34,72 +38,44 @@ def create_database():
 # PASSWORD HASHING
 # =========================================================
 
-def hash_password(password, salt=None):
+def hash_password(password):
 
-    if salt is None:
-        salt = os.urandom(32)
-
-    password_hash = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode("utf-8"),
-        salt,
-        100000
-    )
-
-    return (
-        password_hash.hex(),
-        salt.hex()
-    )
-
-
-# =========================================================
-# VERIFY PASSWORD
-# =========================================================
-
-def verify_password(password, stored_hash, stored_salt):
-
-    salt = bytes.fromhex(stored_salt)
-
-    password_hash, _ = hash_password(
-        password,
-        salt
-    )
-
-    return password_hash == stored_hash
+    return hashlib.sha256(
+        password.encode("utf-8")
+    ).hexdigest()
 
 
 # =========================================================
 # REGISTER USER
 # =========================================================
 
-def register_user(username, password):
+def register_user(email, password):
 
-    username = username.strip()
+    email = email.strip().lower()
 
-    if username == "":
-        return False, "Username cannot be empty."
+    if email == "":
+        return False, "Email cannot be empty."
 
     if len(password) < 6:
         return False, "Password must contain at least 6 characters."
 
-    password_hash, salt = hash_password(password)
+    hashed_password = hash_password(password)
 
     try:
 
-        conn = sqlite3.connect(DB_NAME)
+        conn = sqlite3.connect(DB_PATH)
 
         cursor = conn.cursor()
 
         cursor.execute(
             """
             INSERT INTO users
-            (username, password_hash, salt)
-            VALUES (?, ?, ?)
+            (email, password)
+            VALUES (?, ?)
             """,
             (
-                username,
-                password_hash,
-                salt
+                email,
+                hashed_password
             )
         )
 
@@ -110,7 +86,7 @@ def register_user(username, password):
 
     except sqlite3.IntegrityError:
 
-        return False, "Username already exists."
+        return False, "Email already exists."
 
     except Exception as e:
 
@@ -121,19 +97,21 @@ def register_user(username, password):
 # LOGIN USER
 # =========================================================
 
-def login_user(username, password):
+def login_user(email, password):
 
-    conn = sqlite3.connect(DB_NAME)
+    email = email.strip().lower()
+
+    conn = sqlite3.connect(DB_PATH)
 
     cursor = conn.cursor()
 
     cursor.execute(
         """
-        SELECT username, password_hash, salt
+        SELECT id, email, password
         FROM users
-        WHERE username = ?
+        WHERE email = ?
         """,
-        (username,)
+        (email,)
     )
 
     user = cursor.fetchone()
@@ -141,21 +119,14 @@ def login_user(username, password):
     conn.close()
 
     if user is None:
-
         return False
 
-    stored_username = user[0]
-    stored_hash = user[1]
-    stored_salt = user[2]
+    entered_password = hash_password(password)
 
-    if verify_password(
-        password,
-        stored_hash,
-        stored_salt
-    ):
+    if user[2] == entered_password:
 
         st.session_state["logged_in"] = True
-        st.session_state["username"] = stored_username
+        st.session_state["email"] = user[1]
 
         return True
 
@@ -169,8 +140,7 @@ def login_user(username, password):
 def logout_user():
 
     st.session_state["logged_in"] = False
-
-    st.session_state["username"] = ""
+    st.session_state["email"] = ""
 
 
 # =========================================================
